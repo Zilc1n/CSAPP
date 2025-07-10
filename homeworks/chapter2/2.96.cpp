@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
-#include <iostream>
 
 typedef unsigned float_bits;
 
