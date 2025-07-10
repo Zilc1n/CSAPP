@@ -1,6 +1,6 @@
-#include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cstdio> // Added for printf
 
 typedef unsigned float_bits;
 
@@ -11,12 +11,37 @@ int float_f2i(float_bits f) {
     unsigned exp = (f >> 23) & 0xFF;
     unsigned frac = f & 0x7FFFFF;
 
-    if (exp == 0xff or exp >= 0x20) {
+    if (exp == 0xFF) {
         return INT_MIN;
     }
+    
+    if (exp == 0) {
+        return 0;
+    }
 
-    unsigned s = frac >> std::max(23 - (int)exp, 0);
-    return (-sign * (s << exp));
+    int E = (int)exp - 127;
+    if (E < 0) {
+        return 0;
+    }
+    unsigned long long mantissa = frac | (1ULL << 23);
+    
+    if (E > 23) {
+        mantissa <<= (E - 23);
+    } else {
+        mantissa >>= (23 - E);
+    }
+
+    if (!sign) {
+        if (mantissa > (unsigned)INT_MAX) {
+            return INT_MIN;
+        }
+        return (int)mantissa;
+    } else {
+        if (mantissa > (unsigned)INT_MAX + 1U) {
+            return INT_MIN;
+        }
+        return -(int)mantissa;
+    }
 }
 
 int main() {
@@ -28,19 +53,10 @@ int main() {
     assert(float_f2i(0xFF800000) == INT_MIN); // -Infinity
 
     // 2. Overflow cases (values too large for int): Should return 0x80000000 (INT_MIN)
-    // 2^31 (0x4F000000) is one more than INT_MAX (2^31 - 1), so it overflows for positive.
-    assert(float_f2i(0x4F000000) == INT_MIN);
-    // Values just above INT_MAX for positive floats
+    assert(float_f2i(0x4F000000) == INT_MIN); // 2^31, overflows
     assert(float_f2i(0x4F000001) == INT_MIN);
     assert(float_f2i(0x4F7FFFFF) == INT_MIN);
-    assert(float_f2i(0x4F800000) == INT_MIN); // Largest positive float exponent before infinity
-
-    // Values just below INT_MIN for negative floats (more negative than -2^31)
-    // -2^31 - epsilon (e.g., -2147483649.0) -> overflows to INT_MIN.
-    // For floats, the representation of -2^31 (INT_MIN) is 0xCF000000.
-    // Anything more negative (like -2^31 - 1.0) would technically be 0xCF000001 in integer,
-    // but in float representation, it's about 0xCF000001 for slightly more negative.
-    // A value slightly more negative than INT_MIN (e.g., -2147483649.0)
+    assert(float_f2i(0x4F800000) == INT_MIN);
     assert(float_f2i(0xCF000001) == INT_MIN);
     assert(float_f2i(0xCF7FFFFF) == INT_MIN);
     assert(float_f2i(0xCF800000) == INT_MIN);
@@ -54,32 +70,31 @@ int main() {
     assert(float_f2i(0xBF7FFFFF) == 0); // -0.999...f -> 0
     assert(float_f2i(0x3F000000) == 0); // 0.5f -> 0
     assert(float_f2i(0xBF000000) == 0); // -0.5f -> 0
-    // Smallest normalized positive float (0x00800000, 1.0 * 2^-126) -> 0
     assert(float_f2i(0x00800000) == 0);
-    // Smallest non-zero denormalized float (0x00000001) -> 0
     assert(float_f2i(0x00000001) == 0);
-    // Corresponding negative values`
     assert(float_f2i(0x80800000) == 0);
     assert(float_f2i(0x80000001) == 0);
 
     // 5. Positive normalized numbers within int range
-    assert(float_f2i(0x3F800000) == 1);     // 1.0f -> 1
-    assert(float_f2i(0x40000000) == 2);     // 2.0f -> 2
-    assert(float_f2i(0x40400000) == 3);     // 3.0f -> 3
-    assert(float_f2i(0x404CCCCC) == 3);     // 3.1f -> 3 (truncates)
-    assert(float_f2i(0x405FFFFF) == 3);     // 3.999...f -> 3 (truncates)
-    assert(float_f2i(0x47E00000) == 65536); // 65536.0f (2^16) -> 65536
-    // Largest positive integer that fits in int: INT_MAX (2^31 - 1)
-    // The float representation of 2147483647.0f is 0x4EFF_FFFF
-    assert(float_f2i(0x4effffff) == INT_MAX);
+    assert(float_f2i(0x3F800000) == 1);       // 1.0f -> 1
+    assert(float_f2i(0x40000000) == 2);       // 2.0f -> 2
+    assert(float_f2i(0x40400000) == 3);       // 3.0f -> 3
+    assert(float_f2i(0x404CCCCC) == 3);       // ~3.2f -> 3 (truncates)
+    assert(float_f2i(0x405FFFFF) == 3);       // ~3.999f -> 3 (truncates)
+    assert(float_f2i(0x47800000) == 65536);   // 65536.0f (2^16)
+
+    // The float 0x4effffff represents the exact integer 2147483520.
+    // It does NOT represent INT_MAX. A correct float_f2i function should return its actual value.
+    assert(float_f2i(0x4effffff) == 2147483520);
 
     // 6. Negative normalized numbers within int range
-    assert(float_f2i(0xBF800000) == -1);     // -1.0f -> -1
-    assert(float_f2i(0xC0000000) == -2);     // -2.0f -> -2
-    assert(float_f2i(0xC0400000) == -3);     // -3.0f -> -3
-    assert(float_f2i(0xC04CCCCC) == -3);     // -3.1f -> -3 (truncates towards zero)
-    assert(float_f2i(0xC05FFFFF) == -3);     // -3.999...f -> -3 (truncates towards zero)
-    assert(float_f2i(0xC7E00000) == -65536); // -65536.0f -> -65536
+    assert(float_f2i(0xBF800000) == -1);      // -1.0f -> -1
+    assert(float_f2i(0xC0000000) == -2);      // -2.0f -> -2
+    assert(float_f2i(0xC0400000) == -3);      // -3.0f -> -3
+    assert(float_f2i(0xC04CCCCC) == -3);      // ~-3.2f -> -3 (truncates)
+    assert(float_f2i(0xC05FFFFF) == -3);      // ~-3.999f -> -3 (truncates)
+    assert(float_f2i(0xC7800000) == -65536);  // -65536.0f (-2^16)
+
     // Smallest negative integer that fits in int: INT_MIN (-2^31)
     // The float representation of -2147483648.0f is 0xCF000000
     assert(float_f2i(0xCF000000) == INT_MIN);
