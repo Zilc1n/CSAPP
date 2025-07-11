@@ -23,6 +23,7 @@ int float_f2i(float_bits f) {
     if (E < 0) {
         return 0;
     }
+    if (E > 54) return 0x80000000u;
     unsigned long long mantissa = frac | (1ULL << 23);
     
     if (E > 23) {
@@ -60,6 +61,7 @@ int main() {
     assert(float_f2i(0xCF000001) == INT_MIN);
     assert(float_f2i(0xCF7FFFFF) == INT_MIN);
     assert(float_f2i(0xCF800000) == INT_MIN);
+    assert(float_f2i(0xEF800000) == INT_MIN);
 
     // 3. Zero cases: Should convert to 0
     assert(float_f2i(0x00000000) == 0); // +0.0

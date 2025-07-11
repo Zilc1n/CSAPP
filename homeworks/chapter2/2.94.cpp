@@ -18,7 +18,7 @@ float_bits float_twice(float_bits f) {
         // If the shift causes the leading bit to be 1, normalize
         if (frac & 0x800000) {
             exp = 1;
-            frac = 0; // 规格化后frac应为0
+            frac = frac & 0x7FFFFF; // 规格化后frac去掉最高位
         }
         return (sign << 31) | (exp << 23) | frac;
     }
@@ -43,8 +43,6 @@ int main() {
     assert(float_twice(0x80000000) == 0x80000000);
     // 0x00000001: 最小正非规格化数，左移一位
     assert(float_twice(0x00000001) == 0x00000002);
-    // 0x007FFFFF: 最大非规格化数，左移一位后规格化
-    assert(float_twice(0x007FFFFF) == 0x00800000);
     // 0x00800000: 最小正规格化数，exp=1, frac=0，乘2后exp=2
     assert(float_twice(0x00800000) == 0x01000000);
     // 0x3F800000: 1.0f, 乘2后为2.0f
@@ -57,5 +55,6 @@ int main() {
     assert(float_twice(0xFF7FFFFF) == 0xFF800000);
     // 0x12345678: 随机数，人工计算结果
     assert(float_twice(0x12345678) == 0x12B45678);
+    assert(float_twice(0x7fffff) == 16777214);
     return 0;
 }

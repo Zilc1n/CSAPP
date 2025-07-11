@@ -5,19 +5,32 @@
 typedef unsigned float_bits;
 
 /* Compute (float) i */
-float_bits float_i2f(int i) {
-    if (!i) {
-        return 0;
-    }
-    unsigned sign = (i >> 31) & 1;
-    unsigned frac = i & 0x7fffffff;
-
-    unsigned j = frac & 0x007f8000;
-    if (!j) {
-        return (sign << 31 | 0 | ((frac << 17) >> 9));
-    }
-
-    return 0;
+float_bits float_i2f(int x) {
+    unsigned sign = x >> 31 & 1, exp, frac, round;
+   int x_exp, frac_mask;
+   if (!x) // x=0，会在求x最高非零位时出错，所以特判
+      return 0;
+   if (!(x ^ (1 << 31))) // x=TMin，会在下一步对x取反过程中出错，所以特判
+      return 0xcf << 24;
+   if (sign)
+      x = -x;
+   // x_exp 代表 x 的最高非零位的位置，也即 x 的精度位的最高位的位置
+   x_exp = 31;
+   while (!(x >> x_exp))
+      x_exp--;
+   exp = x_exp + 0x7f; // exp+bias
+   x <<= (31 - x_exp); // 得到小数部分
+   frac_mask = 0x7fffff;
+   // 右移 8 位，使得尾数位对齐
+   frac = (x >> 8) & frac_mask;
+   round = x & 0xff; // 得到要被舍入的小数部分
+   frac += ((round > 0x80) || ((round == 0x80) && (frac & 1))); // 等价于判断是否大于128，或者等于128且最低位为1，即向偶数舍入
+   // 对于舍入后进位的情况，因为最高位从23变为24，所以要且上一个掩码，而且增加一位阶码
+   if (frac >> 23) {
+      frac &= frac_mask;
+      exp += 1;
+   }
+   return sign << 31 | exp << 23 | frac;
 }
 
 // Helper: compute expected float bits by native cast

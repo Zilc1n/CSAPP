@@ -259,25 +259,27 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-    // 1. 归一化：负数时 y = ~x，正数时 y = x
-    int y = x ^ (x >> 31), b0, adjust;
+    int sign = x >> 31;
+    // x > 0 -> y = x ^ 0 = x;
+    // x < 0 -> y = x ^ -1 = ~x
+    int y = x ^ sign;
+    int b16, b8, b4, b2, b1, b0, bits;
 
-    // 2. 二分查找最高“1”的 0‑based 索引 n
-    int n = (!!(y >> 16) << 4)
-            + (!!(y >> 8) << 3)
-            + (!!(y >> 4) << 2)
-            + (!!(y >> 2) << 1)
-            + (!!(y >> 1));
+    b16 = (!!(y >> 16)) << 4;
+    y = y >> b16;
+    b8 = (!!(y >> 8)) << 3;
+    y = y >> b8;
+    b4 = (!!(y >> 4)) << 2;
+    y = y >> b4;
+    b2 = (!!(y >> 2)) << 1;
+    y = y >> b2;
+    b1 = (!!(y >> 1));
+    y = y >> b1;
+    b0 = y;
 
-    // 3. b0：最高“1”是否在第 n 位
-    b0 = (y >> n) & 1;
+    bits = b16 + b8 + b4 + b2 + b1 + b0;
 
-    // 4. adjust：如果 y==0 (即 x==0)，需要返 1；否则返 2
-    //    !y 为 1 时 (~1+3)=1；!y 为 0 时 (~0+3)=2
-    adjust = ~(!y) + 3;
-
-    // 5. 最终 bits = n + b0 + adjust
-    return n + b0 + adjust;
+    return bits + 1;
 }
 // float
 /*
@@ -292,7 +294,24 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned sign = uf >> 31;
+    unsigned exp = (uf >> 23) & 0xFF;
+    unsigned frac = uf & 0x7FFFFF;
+
+    // NaN or infinity
+    if (exp == 0xFF) {
+        return uf;
+    }
+    if (exp == 0) {
+        frac <<= 1;
+        if (frac & 0x800000) {
+            frac = frac & 0x7FFFFF;
+            exp = 1;
+        }
+        return (sign << 31 | (exp << 23) | frac);
+    }
+    exp += 1;
+    return (sign << 31) | (exp << 23) | frac;
 }
 /*
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -307,7 +326,38 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-    return 2;
+    unsigned sign = uf >> 31;
+    unsigned exp = (uf >> 23) & 0xFF;
+    unsigned frac = uf & 0x7FFFFF;
+    unsigned mantissa;
+
+    int E = exp - 127;
+    // NaN or infinity
+    if (exp == 0xFF) {
+        return 0x80000000u;
+    }
+
+    if (exp == 0 || E < 0) return 0;
+
+    mantissa = frac | (1U << 23);
+
+    if (E > 54) return 0x80000000u;
+    if (E >= 23)
+        mantissa <<= (E - 23);
+    else
+        mantissa >>= (23 - E);
+
+    if (!sign) {
+        if (mantissa > 0x7fffffff) {
+            return 0x80000000u;
+        }
+        return mantissa;
+    } else {
+        if (mantissa > 0x7fffffff + 1U) {
+            return 0x80000000u;
+        }
+        return -mantissa;
+    }
 }
 /*
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -323,5 +373,25 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    // (-1)^sign × 1.fraction × 2^(exp - 127)
+    int exp;
+    unsigned result;
+
+    if (x < -149) {
+        // Too small, underflow
+        return 0;
+    } else if (x <= -127) {
+        // Denorm
+        // Compute fraction
+        int shift = x + 149;
+        result = 1 << shift;
+        return result;
+    } else if (x <= 127) {
+        // Normalized
+        exp = x + 127;
+        return exp << 23;
+    } else {
+        // Overflow, return +INF
+        return 0x7F800000;
+    }
 }
